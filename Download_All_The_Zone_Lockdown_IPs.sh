@@ -25,7 +25,7 @@ for ((PAGE=1; PAGE<=$PAGES; PAGE++)); do
 
   # Loop through each zone ID and fetch Zone Lockdown records
   while IFS= read -r ZONE_ID; do
-    echo "Fetching Zone Lockdown records for zone $ZONE_ID"
+    echo "Fetching Zone records $ZONE_ID"
     # Fetch Zone Lockdown records for the current zone ID
     ZONE_LOCKDOWNS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/firewall/lockdowns?page=1&per_page=100" -H "Authorization: Bearer $API_KEY")
     
