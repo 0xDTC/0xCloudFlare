@@ -1,4 +1,4 @@
-<a href="https://www.buymeacoffee.com/0xDTC"><img src="https://img.buymeacoffee.com/button-api/?text=Buy me a knowledge&emoji=📖&slug=0xDTC&button_colour=FF5F5F&font_colour=ffffff&font_family=Comic&outline_colour=000000&coffee_colour=FFDD00" /></a>
+[![Buy Me a Knowledge](https://img.shields.io/badge/Buy_Me_a_Knowledge-📖-FF5F5F?style=for-the-badge&logo=buy-me-a-coffee&logoColor=white)](https://www.buymeacoffee.com/0xDTC)
 
 # CF-Zone-Tools
 A collection of shell scripts designed to automate interactions with Cloudflare's API, facilitating tasks such as downloading zone lockdown IPs, retrieving DNS entries, and obtaining OWASP rule sets.
