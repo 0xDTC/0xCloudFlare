@@ -8,7 +8,7 @@
 # ============================================================
 
 param(
-    [int]$StaleDays = 10,
+    [int]$StaleDays = 3,
     [switch]$DryRun,
     [switch]$Silent
 )
@@ -41,36 +41,56 @@ function Write-Log {
 function Get-CurrentIPs {
     $ips = @{}
 
-    # Get IPv4
-    try {
-        $ipv4 = (Invoke-RestMethod -Uri "https://ifconfig.io/ip" -TimeoutSec 10).Trim()
-        if ($ipv4 -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$') {
-            $ips["v4"] = $ipv4
-        }
-    } catch {
-        Write-Log "Could not detect IPv4: $($_.Exception.Message)" "Yellow"
-    }
+    # IPv4 detection - try multiple sources until one returns a valid IPv4
+    # Many services return IPv6 on dual-stack connections, so we use IPv4-specific endpoints
+    $ipv4Sources = @(
+        @{ Name = "api.ipify.org";       Uri = "https://api.ipify.org?format=json"; Type = "json"; Field = "ip" },
+        @{ Name = "ipv4.icanhazip.com";  Uri = "https://ipv4.icanhazip.com";        Type = "text" },
+        @{ Name = "ifconfig.io";         Uri = "https://ifconfig.io/ip";             Type = "text" },
+        @{ Name = "checkip.amazonaws.com"; Uri = "https://checkip.amazonaws.com";    Type = "text" },
+        @{ Name = "ifconfig.me";         Uri = "https://ifconfig.me/ip";             Type = "text" }
+    )
 
-    # Get IPv6
-    try {
-        # Force IPv6 connection
-        $ipv6 = (Invoke-RestMethod -Uri "https://ifconfig.io/ip" -TimeoutSec 10 -ConnectionUri "https://[2606:4700:4700::1111]/cdn-cgi/trace").Trim()
-        # Fallback: try v6 specific endpoint
-        if ($ipv6 -notmatch ':') {
-            $ipv6 = (Invoke-RestMethod -Uri "https://v6.ifconfig.io/ip" -TimeoutSec 10).Trim()
-        }
-        if ($ipv6 -match ':') {
-            $ips["v6"] = $ipv6
-        }
-    } catch {
-        # Try alternate IPv6 detection
+    foreach ($source in $ipv4Sources) {
         try {
-            $ipv6 = (Invoke-RestMethod -Uri "https://api64.ipify.org" -TimeoutSec 10).Trim()
-            if ($ipv6 -match ':') {
-                $ips["v6"] = $ipv6
+            if ($source.Type -eq "json") {
+                $result = Invoke-RestMethod -Uri $source.Uri -TimeoutSec 8
+                $candidate = $result.($source.Field).Trim()
+            } else {
+                $candidate = (Invoke-RestMethod -Uri $source.Uri -TimeoutSec 8).Trim()
+            }
+            if ($candidate -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$') {
+                $ips["v4"] = $candidate
+                Write-Log "IPv4 detected via $($source.Name): $candidate" "Green"
+                break
             }
         } catch {
-            Write-Log "Could not detect IPv6 (may not be available)" "Yellow"
+            Write-Log "IPv4 source $($source.Name) failed: $($_.Exception.Message)" "DarkGray"
+        }
+    }
+
+    # Only try IPv6 if no IPv4 was found
+    if (-not $ips.ContainsKey("v4")) {
+        Write-Log "No IPv4 found from any source, falling back to IPv6..." "Yellow"
+        $ipv6Sources = @(
+            @{ Name = "api6.ipify.org";      Uri = "https://api6.ipify.org";        Type = "text" },
+            @{ Name = "ipv6.icanhazip.com";  Uri = "https://ipv6.icanhazip.com";    Type = "text" },
+            @{ Name = "ifconfig.io";         Uri = "https://ifconfig.io/ip";         Type = "text" },
+            @{ Name = "ifconfig.me";         Uri = "https://ifconfig.me/ip";         Type = "text" },
+            @{ Name = "ipinfo.io";           Uri = "https://ipinfo.io/ip";           Type = "text" }
+        )
+
+        foreach ($source in $ipv6Sources) {
+            try {
+                $candidate = (Invoke-RestMethod -Uri $source.Uri -TimeoutSec 8).Trim()
+                if ($candidate -match ':') {
+                    $ips["v6"] = $candidate
+                    Write-Log "IPv6 detected via $($source.Name): $candidate" "Green"
+                    break
+                }
+            } catch {
+                Write-Log "IPv6 source $($source.Name) failed: $($_.Exception.Message)" "DarkGray"
+            }
         }
     }
 
@@ -148,7 +168,7 @@ if (-not $Silent) {
 Write-Log "--- Run started ---"
 
 # Step 1: Detect current IPs
-Write-Log "Detecting current IPs from ifconfig.io..." "Cyan"
+Write-Log "Detecting current IP (IPv4 preferred)..." "Cyan"
 $currentIPs = Get-CurrentIPs
 
 if ($currentIPs.Count -eq 0) {

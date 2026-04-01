@@ -22,8 +22,9 @@ PowerShell scripts to manage Cloudflare IP allowlists used by WAF custom rules. 
 ## Features
 
 - Interactive menu to view, add, and remove IPs from a Cloudflare IP list
-- Auto-detect IPv4 and IPv6 via ifconfig.io
-- Auto-remove stale IPs after a configurable number of days
+- Auto-detect public IP with IPv4 priority (falls back to IPv6 only if no IPv4 is available)
+- Multiple detection sources for reliability (api.ipify.org, icanhazip.com, ifconfig.io, checkip.amazonaws.com, ifconfig.me)
+- Auto-remove stale IPs after a configurable number of days (default: 3)
 - Protected IPs (manually added) are never auto-removed
 - Silent mode with file logging for scheduled tasks
 - Dry-run mode to preview changes without applying them
@@ -36,7 +37,7 @@ PowerShell scripts to manage Cloudflare IP allowlists used by WAF custom rules. 
 Interactive menu for managing the Cloudflare IP allowlist. View current IPs, add new ones manually or auto-detect, and remove old ones with confirmation.
 
 ### `CF-AutoIP-Manager.ps1`
-Automated script that detects the current machine's public IPv4/IPv6, syncs them with the Cloudflare allowlist, and removes IPs that haven't been seen for a configurable number of days (default: 10).
+Automated script that detects the current machine's public IP (IPv4 preferred, IPv6 fallback only), syncs it with the Cloudflare allowlist, and removes IPs that haven't been seen for a configurable number of days (default: 3). Uses 5 detection sources for reliability.
 
 ---
 
@@ -140,9 +141,9 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 .\CF-AutoIP-Manager.ps1 -DryRun
 ```
 
-**Custom stale threshold** (e.g. 5 days instead of 10):
+**Custom stale threshold** (e.g. 7 days instead of default 3):
 ```powershell
-.\CF-AutoIP-Manager.ps1 -StaleDays 5
+.\CF-AutoIP-Manager.ps1 -StaleDays 7
 ```
 
 **Silent mode** (for scheduled tasks, logs to `cf-autoip.log`):
@@ -154,33 +155,30 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
   ============================================
   Cloudflare Auto IP Manager
-  Stale threshold: 10 days
+  Stale threshold: 3 days
   ============================================
 
-  Detecting current IPs from ifconfig.io...
-  Detected v4 : 203.0.113.45
-  Detected v6 : 2001:db8::1
+  Detecting current IP (IPv4 preferred)...
+  IPv4 detected via api.ipify.org: 203.0.113.45
 
   Current allowlist:
     198.51.100.10 - Web Server - DO NOT REMOVE
-    203.0.113.45 - Admin - Auto IPv4 | seen:2026-03-20
-    192.0.2.99 - Admin - Auto IPv4 | seen:2026-03-10
+    203.0.113.45 - Admin - Auto IPv4 | seen:2026-03-28
+    192.0.2.99 - Admin - Auto IPv4 | seen:2026-03-24
 
   Updating IPv4 203.0.113.45 (refreshing seen date)
-  New IPv6 detected: 2001:db8::1 - adding to allowlist
 
-  Checking for stale IPs (>10 days)...
+  Checking for stale IPs (>3 days)...
   Protected: 198.51.100.10 (Web Server) - no auto-removal
-  OK: 203.0.113.45 (last seen 0d ago, threshold: 10d)
-  STALE: 192.0.2.99 (last seen 14d ago) - removing
+  OK: 203.0.113.45 (last seen 0d ago, threshold: 3d)
+  STALE: 192.0.2.99 (last seen 7d ago) - removing
 
   Final allowlist:
   ------------------------------------
     198.51.100.10 - Web Server - DO NOT REMOVE
-    203.0.113.45 - Admin - Auto IPv4 | seen:2026-03-24
-    2001:db8::1 - Admin - Auto IPv6 | seen:2026-03-24
+    203.0.113.45 - Admin - Auto IPv4 | seen:2026-03-31
   ------------------------------------
-  Total: 3 IPs
+  Total: 2 IPs
 ```
 
 ### How Stale Detection Works
@@ -271,6 +269,7 @@ Unregister-ScheduledTask -TaskName "Cloudflare IP Updater" -Confirm:$false
 | "Execution policy" error | Run: `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser` |
 | Can't access admin panel | Your IP changed. Run the menu script and add your new IP. |
 | Auto-detect shows wrong IP | VPN/proxy active. Use the menu script to add the correct IP manually. |
+| Auto-detect returns IPv6 instead of IPv4 | All 5 IPv4 sources failed (network issue or IPv4 unavailable). Check connectivity to api.ipify.org, icanhazip.com, etc. |
 | "Invalid access token" error | Check `CF_EMAIL` and `CF_API_KEY` are correct. Global API Key, not API Token. |
 | Locked out, can't run script | Login to Cloudflare dashboard > Account > Configurations > Lists > add your IP manually. |
 | A plugin/feature stopped working | The server IP may need to be in the allowlist. Add it as a protected entry (no `seen:` tag). |

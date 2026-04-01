@@ -61,8 +61,9 @@ function Add-IP {
 
     if ($ip -eq "auto") {
         try {
-            $ip = (Invoke-RestMethod -Uri "https://api.ipify.org" -TimeoutSec 5).Trim()
-            Write-Host "  Your current IP: $ip" -ForegroundColor Cyan
+            $result = Invoke-RestMethod -Uri "https://api.ipify.org?format=json" -TimeoutSec 5
+            $ip = $result.ip.Trim()
+            Write-Host "  Your current IPv4: $ip" -ForegroundColor Cyan
         } catch {
             Write-Host "  ERROR: Could not detect your IP" -ForegroundColor Red
             return
@@ -167,7 +168,8 @@ while ($true) {
         "3" { } # Just refreshes on next loop
         "4" {
             try {
-                $myip = (Invoke-RestMethod -Uri "https://api.ipify.org" -TimeoutSec 5).Trim()
+                $result = Invoke-RestMethod -Uri "https://api.ipify.org?format=json" -TimeoutSec 5
+                $myip = $result.ip.Trim()
                 $comment = "Carlos - $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
                 $body = @(@{ ip = $myip; comment = $comment }) | ConvertTo-Json -AsArray
                 $response = Invoke-RestMethod -Uri "$baseUrl/items" -Headers $headers -Method Post -Body $body
