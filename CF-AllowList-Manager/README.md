@@ -28,6 +28,9 @@ PowerShell scripts to manage Cloudflare IP allowlists used by WAF custom rules. 
 - Protected IPs (manually added) are never auto-removed
 - Silent mode with file logging for scheduled tasks
 - Dry-run mode to preview changes without applying them
+- **Network-aware**: detects gateway + Wi-Fi SSID + network profile to skip updates when still on the same network
+- **Self-installing background service**: one-command setup creates Windows Task Scheduler jobs (hourly + instant on network change)
+- **Force update**: bypass network check on demand
 
 ---
 
@@ -38,6 +41,10 @@ Interactive menu for managing the Cloudflare IP allowlist. View current IPs, add
 
 ### `CF-AutoIP-Manager.ps1`
 Automated script that detects the current machine's public IP (IPv4 preferred, IPv6 fallback only), syncs it with the Cloudflare allowlist, and removes IPs that haven't been seen for a configurable number of days (default: 3). Uses 5 detection sources for reliability.
+
+**Network-aware mode**: On each run, the script builds a fingerprint from the default gateway, Wi-Fi SSID, and Windows network profile name. If the fingerprint matches the previous run, the script skips all Cloudflare API calls (same network = same IP). When the fingerprint changes (e.g. switching from home Wi-Fi to a coffee shop), it detects the new public IP and updates the allowlist automatically.
+
+**Background service**: Use `-Install` to create two Windows Task Scheduler tasks — one hourly safety-net check and one event-driven trigger that fires ~30 seconds after any network connection change. Everything runs hidden with no foreground window.
 
 ---
 
@@ -131,9 +138,34 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 ### Auto IP Updater
 
+**Install as background service** (requires Administrator):
+```powershell
+.\CF-AutoIP-Manager.ps1 -Install
+```
+This creates two Task Scheduler tasks:
+- `CF-AutoIP-Manager` — runs every hour
+- `CF-AutoIP-Manager-NetworkChange` — triggers ~30s after any network connect event
+
+Both run hidden with `-Silent` and log to `%APPDATA%\CF-AutoIP-Manager\cf-autoip.log`.
+
+**Uninstall** (requires Administrator):
+```powershell
+.\CF-AutoIP-Manager.ps1 -Uninstall
+```
+
+**Check status** — see current network, saved state, and task status:
+```powershell
+.\CF-AutoIP-Manager.ps1 -Status
+```
+
 **Basic run** — detect IPs, sync list, clean stale entries:
 ```powershell
 .\CF-AutoIP-Manager.ps1
+```
+
+**Force update** — bypass network-same check:
+```powershell
+.\CF-AutoIP-Manager.ps1 -ForceUpdate
 ```
 
 **Dry run** — preview what would happen without making changes:
@@ -243,22 +275,40 @@ curl -X POST "https://api.cloudflare.com/client/v4/zones/YOUR_ZONE_ID/rulesets" 
 
 ## Scheduling
 
-To run the auto-updater daily at 8 AM:
+The script can install itself as a background service with a single command:
 
 ```powershell
 # Run as Administrator
-$action = New-ScheduledTaskAction -Execute "powershell.exe" `
-  -Argument "-ExecutionPolicy Bypass -File `"C:\Scripts\CF-AutoIP-Manager.ps1`" -Silent"
-$trigger = New-ScheduledTaskTrigger -Daily -At "8:00AM"
-Register-ScheduledTask -Action $action -Trigger $trigger `
-  -TaskName "Cloudflare IP Updater" `
-  -Description "Auto-update Cloudflare allowlist with current IP"
+.\CF-AutoIP-Manager.ps1 -Install
 ```
 
-To remove the scheduled task:
+This creates two Task Scheduler tasks:
+| Task | Trigger | Purpose |
+|------|---------|---------|
+| `CF-AutoIP-Manager` | Every 1 hour | Safety-net periodic check |
+| `CF-AutoIP-Manager-NetworkChange` | Network connect event (30s delay) | Near-instant detection on network switch |
+
+Both tasks run with `-WindowStyle Hidden -Silent` (no foreground window, log-only).
+
+To remove:
 ```powershell
-Unregister-ScheduledTask -TaskName "Cloudflare IP Updater" -Confirm:$false
+# Run as Administrator
+.\CF-AutoIP-Manager.ps1 -Uninstall
 ```
+
+### How Network Detection Works
+
+Each run builds a fingerprint from three local values:
+
+| Source | How it's detected |
+|--------|-------------------|
+| Default gateway IP | `Get-NetRoute -DestinationPrefix '0.0.0.0/0'` |
+| Wi-Fi SSID | `netsh wlan show interfaces` (empty if wired) |
+| Network profile name | `Get-NetConnectionProfile` |
+
+These are hashed (SHA-256) into a single fingerprint. If the fingerprint matches the previous run's saved state, the script exits immediately without calling any external IP detection service or Cloudflare API. When the fingerprint changes, it proceeds with full IP detection and allowlist sync.
+
+State is stored at `%APPDATA%\CF-AutoIP-Manager\state.json`.
 
 ---
 
